@@ -1,0 +1,38 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import from_json, col
+from pyspark.sql.types import StructType, StringType
+
+spark = SparkSession.builder \
+    .appName("ViolenciaGeneroStreaming") \
+    .getOrCreate()
+
+spark.sparkContext.setLogLevel("WARN")
+
+# Esquema (ajustar nombres reales)
+schema = StructType() \
+    .add("sexo", StringType()) \
+    .add("tipo_violencia", StringType()) \
+    .add("departamento", StringType())
+
+# Leer desde Kafka
+df = spark.readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("subscribe", "violencia_genero") \
+    .load()
+
+# Convertir JSON
+parsed_df = df.selectExpr("CAST(value AS STRING)") \
+    .select(from_json(col("value"), schema).alias("data")) \
+    .select("data.*")
+
+# Análisis en tiempo real
+resultados = parsed_df.groupBy("tipo_violencia").count()
+
+# Mostrar en consola
+query = resultados.writeStream \
+    .outputMode("complete") \
+    .format("console") \
+    .start()
+
+query.awaitTermination()
